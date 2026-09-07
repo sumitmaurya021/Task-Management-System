@@ -14,3 +14,10 @@ def create_tasks(body:TaskSchema, db:Session):
         "status": "Task Created Successfully...",
         "data": new_task
     }
+
+def get_tasks(db:Session):
+    tasks = db.query(TaskModel).all()
+    return {
+        "status": "All Tasks",
+        "data": tasks
+    }
