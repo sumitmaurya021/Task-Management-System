@@ -1,13 +1,17 @@
-from fastapi import status
-from fastapi import HTTPException, Request
+from typing import Optional
+from fastapi import status, HTTPException, Request, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from src.user.dtos import UserSchema, LoginSchema
 from sqlalchemy.orm import Session
 from src.user.models import UserModel
 from pwdlib import PasswordHash
 from src.utils.settings import settings
+from src.utils.db import get_db
 from datetime import datetime, timedelta, timezone
 import jwt
 from jwt.exceptions import InvalidTokenError
+
+security = HTTPBearer(auto_error=False)
 
 
 password_hash = PasswordHash.recommended()
@@ -51,7 +55,7 @@ def login_user(body:LoginSchema, db:Session):
     if not verify_password(body.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
 
-    exp_time = datetime.now(timezone.utc) + timedelta(seconds=30)
+    exp_time = datetime.now(timezone.utc) + timedelta(minutes=settings.EXP_TIME)
     token = jwt.encode({
         "id": user.id,
         "exp": exp_time
@@ -61,16 +65,24 @@ def login_user(body:LoginSchema, db:Session):
     
     
 
-def is_authenticated(request:Request, db:Session):
+def is_authenticated(
+    request: Request,
+    db: Session = Depends(get_db),
+    token_auth: Optional[HTTPAuthorizationCredentials] = Depends(security)
+):
     try:
-        token = request.headers.get("authorization")
+        token = None
+        if token_auth and token_auth.credentials:
+            token = token_auth.credentials
+        elif request.headers.get("authorization"):
+            token = request.headers.get("authorization").split(" ")[-1]
+
         if not token:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="You are unauthenticated")
-        token = token.split(" ")[-1]
+
         data = jwt.decode(token, settings.SECRET_KEY, settings.ALGORITHM)
         user_id = data.get("id")
 
-        
         user = db.query(UserModel).filter(UserModel.id == user_id).first()
 
         if not user:
